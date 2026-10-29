@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Version>2.0.0</Version>
+    <Authors>enonymous1</Authors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- NU1900 is the NuGet vulnerability-audit warning, which fires when
+         audit data cannot be fetched (e.g. offline). That must not fail
+         an otherwise good build. -->
+    <WarningsNotAsErrors>NU1900</WarningsNotAsErrors>
+  </PropertyGroup>
+</Project>

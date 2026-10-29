@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build
+        run: dotnet build GameOfLife.sln --configuration Release
+      - name: Test
+        run: dotnet test GameOfLife.sln --configuration Release --no-build
+      - name: Check formatting
+        run: dotnet format GameOfLife.sln --verify-no-changes

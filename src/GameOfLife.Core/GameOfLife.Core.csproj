@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>A testable Conway's Game of Life core: grid, rules, edge modes, and .cells save/load. No user-interface code.</Description>
+  </PropertyGroup>
+
+</Project>
