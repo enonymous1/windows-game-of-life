@@ -45,9 +45,31 @@ themselves are unchanged; everything around them was rebuilt.
   and malformed files, resizing, seeding, and the scratch-buffer
   regression above.
 - **Repo hygiene:** `.gitignore`, MIT LICENSE, GitHub Actions CI
-  (core tests on Ubuntu; full solution, tests, and format check on
-  Windows), and a rewritten README.
+  (Ubuntu + Windows matrix: full solution build, tests, and format
+  check on both), and a rewritten README.
 - **Unchanged on purpose:** the B3/S23 rules, the 20x20 default
   grid, the 100 ms default interval, click-to-toggle, the
   generations counter, and the `.cells` `O`/`.` format, so the
   program still feels like the original.
+- **Review fixes (2026-10-31, pre-release):** the Open crash for
+  patterns outside the 5–100 size range is fixed (spinners accept 1
+  and widen to fit a loaded file); `MainForm` no longer owns the
+  timer, file path, or painting (a new `SimulationController` owns
+  the simulation and file, and `LifePanel` owns rendering and mouse
+  input); grid size, interval, and edge rule persist between runs;
+  unhandled UI-thread exceptions show a message instead of crashing
+  outright.
+- **Review fixes, round 2 (2026-10-31, pre-release):** painting skips
+  grid lines for tiny cells and repaints only the changed cell on
+  drags; `AliveCount` is maintained incrementally instead of
+  rescanned; `.cells` files over 1,000,000 cells are rejected; the
+  SDK version lives in `global.json` (CI reads it, no version in the
+  workflow); `.gitattributes` normalizes line endings; the README is
+  rewritten with Description, Prerequisites, Installation, Local
+  Development, and Deployment sections, with screenshot and GIF slots
+  left commented until real Windows captures exist.
+- **Tag-triggered releases (2026-10-31, pre-release):**
+  `.github/workflows/release.yml` runs on `v*` tags: it builds,
+  tests, publishes a framework-dependent win-x64 build, and attaches
+  `game-of-life-win-x64.zip` plus a SHA-256 checksum to the GitHub
+  release.

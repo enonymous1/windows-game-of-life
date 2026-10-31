@@ -1,0 +1,6 @@
+# Normalize line endings to LF on commit.
+* text=auto
+
+# Screenshots and captures are binary and must never be normalized.
+*.png binary
+*.gif binary

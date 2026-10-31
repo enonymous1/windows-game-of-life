@@ -8,6 +8,7 @@ namespace GameOfLife.Core;
 public sealed class Universe
 {
     private bool[,] _cells;
+    private int _aliveCount;
 
     public Universe(int width, int height, BoundaryMode boundary = BoundaryMode.Finite)
     {
@@ -38,30 +39,25 @@ public sealed class Universe
     /// preserved by <see cref="Resize"/> and <see cref="WithBoundary"/>.</summary>
     public int Generation { get; private set; }
 
-    public int AliveCount
-    {
-        get
-        {
-            int count = 0;
-            for (int y = 0; y < Height; y++)
-            {
-                for (int x = 0; x < Width; x++)
-                {
-                    if (_cells[x, y])
-                    {
-                        count++;
-                    }
-                }
-            }
-
-            return count;
-        }
-    }
+    /// <summary>Live-cell count, maintained incrementally by every
+    /// mutation instead of rescanned: the status bar reads it on every
+    /// generation, so a full-grid scan per tick would grow with the grid
+    /// for no benefit.</summary>
+    public int AliveCount => _aliveCount;
 
     public bool this[int x, int y]
     {
         get => _cells[CheckX(x), CheckY(y)];
-        set => _cells[CheckX(x), CheckY(y)] = value;
+        set
+        {
+            int checkedX = CheckX(x);
+            int checkedY = CheckY(y);
+            if (_cells[checkedX, checkedY] != value)
+            {
+                _cells[checkedX, checkedY] = value;
+                _aliveCount += value ? 1 : -1;
+            }
+        }
     }
 
     /// <summary>Flips one cell and returns its new state.</summary>
@@ -75,6 +71,7 @@ public sealed class Universe
     public void Clear()
     {
         Array.Clear(_cells);
+        _aliveCount = 0;
         Generation = 0;
     }
 
@@ -106,6 +103,20 @@ public sealed class Universe
         _cells = resized;
         Width = width;
         Height = height;
+
+        // The copy above drops cells outside the new bounds, so the count
+        // is rebuilt from the resized grid rather than carried over.
+        _aliveCount = 0;
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                if (_cells[x, y])
+                {
+                    _aliveCount++;
+                }
+            }
+        }
     }
 
     /// <summary>Returns a copy with the same cells and generation count
@@ -114,6 +125,7 @@ public sealed class Universe
     {
         var copy = new Universe(Width, Height, boundary);
         Array.Copy(_cells, copy._cells, _cells.Length);
+        copy._aliveCount = _aliveCount;
         copy.Generation = Generation;
         return copy;
     }
@@ -124,6 +136,7 @@ public sealed class Universe
     {
         var copy = new Universe(Width, Height, Boundary);
         Array.Copy(_cells, copy._cells, _cells.Length);
+        copy._aliveCount = _aliveCount;
         copy.Generation = Generation;
         return copy;
     }
@@ -135,16 +148,22 @@ public sealed class Universe
     public void Step()
     {
         var next = new bool[Width, Height];
+        int alive = 0;
         for (int y = 0; y < Height; y++)
         {
             for (int x = 0; x < Width; x++)
             {
                 int count = CountNeighbors(x, y);
                 next[x, y] = _cells[x, y] ? count is 2 or 3 : count == 3;
+                if (next[x, y])
+                {
+                    alive++;
+                }
             }
         }
 
         _cells = next;
+        _aliveCount = alive;
         Generation++;
     }
 
@@ -184,14 +203,20 @@ public sealed class Universe
         }
 
         Random random = seed.HasValue ? new Random(seed.Value) : Random.Shared;
+        int alive = 0;
         for (int y = 0; y < Height; y++)
         {
             for (int x = 0; x < Width; x++)
             {
                 _cells[x, y] = random.NextDouble() < density;
+                if (_cells[x, y])
+                {
+                    alive++;
+                }
             }
         }
 
+        _aliveCount = alive;
         Generation = 0;
     }
 

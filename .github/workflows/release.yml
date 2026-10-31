@@ -1,0 +1,58 @@
+name: Release
+
+# Cutting a release is pushing a tag: `git tag v2.0.0 && git push origin v2.0.0`.
+# The tag should match Version in Directory.Build.props.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No dotnet-version here on purpose: setup-dotnet reads global.json,
+      # so the SDK version lives in exactly one place (same as ci.yml).
+      - uses: actions/setup-dotnet@v4
+
+      # Format is enforced by CI on main and pull requests; this job gates
+      # on what actually ships: a clean build and passing tests.
+      - name: Build
+        run: dotnet build GameOfLife.sln --configuration Release
+
+      - name: Test
+        run: dotnet test GameOfLife.sln --configuration Release --no-build
+
+      # --self-contained false is explicit, not left to the SDK default:
+      # the release asset stays a small framework-dependent zip, and a
+      # future SDK default change cannot silently turn it into a
+      # self-contained build. The target machine needs the .NET 10
+      # Desktop Runtime; see the README Deployment section.
+      - name: Publish
+        run: dotnet publish src/GameOfLife --configuration Release --runtime win-x64 --self-contained false --output publish
+
+      - name: Package
+        run: |
+          if (-not (Test-Path publish/game-of-life.exe)) {
+            throw "game-of-life.exe not found in publish output"
+          }
+          Compress-Archive -Path publish/* -DestinationPath game-of-life-win-x64.zip
+
+      - name: Checksum
+        run: |
+          $hash = (Get-FileHash -Path game-of-life-win-x64.zip -Algorithm SHA256).Hash
+          "$hash  game-of-life-win-x64.zip" | Out-File -FilePath game-of-life-win-x64.zip.sha256 -Encoding ascii
+
+      # gh is preinstalled on the runner. --generate-notes builds the
+      # release notes from merged pull requests and commits since the
+      # previous tag, so no notes are hand-maintained here. If a release
+      # ever needs a review gate, add --draft to this command.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes game-of-life-win-x64.zip game-of-life-win-x64.zip.sha256

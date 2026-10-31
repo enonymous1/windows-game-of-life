@@ -318,6 +318,42 @@ public class UniverseTests
         Assert.Equal(3, universe.AliveCount);
     }
 
+    [Fact]
+    public void AliveCount_StaysAccurateAcrossOperations()
+    {
+        // Pins the incremental count: every mutation path must keep it
+        // in step with the grid, including no-ops and dropped cells.
+        Universe universe = WithCells(5, 5, (0, 0), (1, 1), (2, 2));
+        Assert.Equal(3, universe.AliveCount);
+
+        universe[0, 0] = true;
+        Assert.Equal(3, universe.AliveCount);
+
+        universe.Toggle(1, 1);
+        Assert.Equal(2, universe.AliveCount);
+
+        Universe clone = universe.Clone();
+        Assert.Equal(2, clone.AliveCount);
+        clone[4, 4] = true;
+        Assert.Equal(3, clone.AliveCount);
+        Assert.Equal(2, universe.AliveCount);
+
+        Universe toroidal = universe.WithBoundary(BoundaryMode.Toroidal);
+        Assert.Equal(2, toroidal.AliveCount);
+
+        universe.Resize(2, 2);
+        Assert.Equal(1, universe.AliveCount);
+
+        universe.Resize(6, 6);
+        Assert.Equal(1, universe.AliveCount);
+
+        universe.Randomize(seed: 9, density: 1);
+        Assert.Equal(36, universe.AliveCount);
+
+        universe.Clear();
+        Assert.Equal(0, universe.AliveCount);
+    }
+
     private static Universe WithCells(int width, int height, params (int X, int Y)[] cells)
     {
         return WithCells(width, height, BoundaryMode.Finite, cells);

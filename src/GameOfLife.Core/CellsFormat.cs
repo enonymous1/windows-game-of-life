@@ -9,6 +9,8 @@ namespace GameOfLife.Core;
 /// pattern always starts at generation 0.</summary>
 public static class CellsFormat
 {
+    private const int MaxCells = 1_000_000;
+
     /// <summary>Serializes a universe: one comment line, then one row
     /// per grid row.</summary>
     public static string Serialize(Universe universe)
@@ -50,8 +52,10 @@ public static class CellsFormat
     /// <summary>Reads a <c>.cells</c> document from a text reader.
     /// The caller owns the reader. Throws
     /// <see cref="InvalidDataException"/> when the document holds no
-    /// cell rows or a row holds any character other than <c>O</c>
-    /// or <c>.</c>.</summary>
+    /// cell rows, when a row holds any character other than <c>O</c>
+    /// or <c>.</c>, or when the document holds more than 1,000,000
+    /// cells: without a cap, a hostile or accidental file could ask for
+    /// an absurd grid before anything validates it.</summary>
     public static Universe Load(TextReader reader, BoundaryMode boundary = BoundaryMode.Finite)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -83,6 +87,13 @@ public static class CellsFormat
         }
 
         int width = rows.Max(row => row.Length);
+        long cellCount = (long)width * rows.Count;
+        if (cellCount > MaxCells)
+        {
+            throw new InvalidDataException(
+                $"The .cells document is {width}x{rows.Count} ({cellCount:N0} cells), over the {MaxCells:N0}-cell limit.");
+        }
+
         var universe = new Universe(width, rows.Count, boundary);
         for (int y = 0; y < rows.Count; y++)
         {

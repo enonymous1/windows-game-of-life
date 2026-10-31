@@ -4,24 +4,20 @@ using GameOfLife.Core;
 
 namespace GameOfLife;
 
-/// <summary>The main window. All simulation state lives in
-/// <see cref="Universe"/>; this form only presents it, so every menu
-/// and toolbar item is wired to a real action. The user interface is
-/// built in code rather than a designer file, so the project has no
-/// binary resources to keep in sync.</summary>
+/// <summary>The main window. Simulation state lives in
+/// <see cref="SimulationController"/>, rendering and mouse input live in
+/// <see cref="LifePanel"/>, and persisted choices live in
+/// <see cref="GameSettings"/>; this form only builds the menus and
+/// controls and wires the three together, so every menu and toolbar item
+/// is wired to a real action. The user interface is built in code rather
+/// than a designer file, so the project has no binary resources to keep
+/// in sync.</summary>
 public sealed class MainForm : Form
 {
-    private Universe _universe = new(20, 20);
-    private readonly System.Windows.Forms.Timer _timer = new();
-    private Color _cellColor = Color.Black;
-    private readonly Color _gridColor = Color.DarkGray;
-    private string? _currentFile;
-    private bool _isPainting;
-    private bool _paintValue;
-
+    private readonly SimulationController _controller;
     private readonly LifePanel _lifePanel = new();
     private readonly ToolStripMenuItem _startMenuItem = new("&Start");
-    private readonly ToolStripMenuItem _stopMenuItem = new("Sto&p");
+    private readonly ToolStripMenuItem _stopMenuItem = new("S&top");
     private readonly ToolStripMenuItem _finiteMenuItem = new("&Finite edges");
     private readonly ToolStripMenuItem _toroidalMenuItem = new("&Toroidal edges");
     private readonly ToolStripButton _startButton = new("Start");
@@ -35,9 +31,19 @@ public sealed class MainForm : Form
     private readonly NumericUpDown _intervalUpDown = new();
     private readonly ComboBox _edgesComboBox = new();
     private readonly TextBox _seedTextBox = new();
+    private MenuStrip _menuStrip = null!;
+    private ToolStrip _toolStrip = null!;
+    private FlowLayoutPanel _controlPanel = null!;
+    private StatusStrip _statusStrip = null!;
+
+    private const string CellsFilter = "Cells files (*.cells)|*.cells|All files (*.*)|*.*";
 
     public MainForm()
     {
+        GameSettings settings = GameSettings.Load();
+        _controller = new SimulationController(
+            settings.Width, settings.Height, settings.Boundary, settings.IntervalMs);
+
         Text = "Game of Life";
         ClientSize = new Size(720, 520);
         MinimumSize = new Size(560, 420);
@@ -48,11 +54,25 @@ public sealed class MainForm : Form
         BuildControlPanel();
         BuildStatusStrip();
 
+        _lifePanel.Grid = _controller.Universe;
         _lifePanel.Dock = DockStyle.Fill;
-        _lifePanel.Paint += OnLifePanelPaint;
-        _lifePanel.MouseDown += OnLifePanelMouseDown;
-        _lifePanel.MouseMove += OnLifePanelMouseMove;
-        _lifePanel.MouseUp += OnLifePanelMouseUp;
+        _lifePanel.GridChanged += (sender, e) =>
+        {
+            _ = sender;
+            _ = e;
+            UpdateStatus();
+        };
+
+        // The controller owns the simulation; the form only refreshes
+        // the view when the simulation reports a change.
+        _controller.Changed += (sender, e) =>
+        {
+            _ = sender;
+            _ = e;
+            _lifePanel.Grid = _controller.Universe;
+            UpdateStatus();
+            _lifePanel.Invalidate();
+        };
 
         // Dock layout follows the original form: the fill panel first,
         // then the bottom strip, then the top strips in reverse order.
@@ -62,8 +82,7 @@ public sealed class MainForm : Form
         Controls.Add(_toolStrip);
         Controls.Add(_menuStrip);
 
-        _timer.Interval = 100;
-        _timer.Tick += OnTimerTick;
+        FormClosing += SaveSettingsOnClosing;
 
         UpdateStatus();
         UpdateRunningState();
@@ -74,16 +93,11 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
-            _timer.Dispose();
+            _controller.Dispose();
         }
 
         base.Dispose(disposing);
     }
-
-    private MenuStrip _menuStrip = null!;
-    private ToolStrip _toolStrip = null!;
-    private FlowLayoutPanel _controlPanel = null!;
-    private StatusStrip _statusStrip = null!;
 
     private void BuildMenu()
     {
@@ -176,24 +190,24 @@ public sealed class MainForm : Form
 
     private void BuildControlPanel()
     {
-        _widthUpDown.Minimum = 5;
-        _widthUpDown.Maximum = 100;
-        _widthUpDown.Value = _universe.Width;
+        _widthUpDown.Minimum = 1;
+        _widthUpDown.Maximum = Math.Max(100, _controller.Universe.Width);
+        _widthUpDown.Value = _controller.Universe.Width;
         _widthUpDown.Width = 56;
-        _heightUpDown.Minimum = 5;
-        _heightUpDown.Maximum = 100;
-        _heightUpDown.Value = _universe.Height;
+        _heightUpDown.Minimum = 1;
+        _heightUpDown.Maximum = Math.Max(100, _controller.Universe.Height);
+        _heightUpDown.Value = _controller.Universe.Height;
         _heightUpDown.Width = 56;
         _intervalUpDown.Minimum = 10;
         _intervalUpDown.Maximum = 2000;
         _intervalUpDown.Increment = 10;
-        _intervalUpDown.Value = 100;
+        _intervalUpDown.Value = _controller.Interval;
         _intervalUpDown.Width = 64;
         _intervalUpDown.ValueChanged += OnIntervalChanged;
 
         _edgesComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _edgesComboBox.Items.AddRange(new object[] { "Finite edges", "Toroidal edges" });
-        _edgesComboBox.SelectedIndex = 0;
+        _edgesComboBox.SelectedIndex = (int)_controller.Universe.Boundary;
         _edgesComboBox.SelectedIndexChanged += OnEdgesComboBoxChanged;
 
         _seedTextBox.Width = 80;
@@ -238,24 +252,11 @@ public sealed class MainForm : Form
         _statusStrip.Dock = DockStyle.Bottom;
     }
 
-    private void OnTimerTick(object? sender, EventArgs e)
-    {
-        _ = sender;
-        Step();
-    }
-
-    private void Step()
-    {
-        _universe.Step();
-        UpdateStatus();
-        _lifePanel.Invalidate();
-    }
-
     private void OnStart(object? sender, EventArgs e)
     {
         _ = sender;
         _ = e;
-        _timer.Start();
+        _controller.Start();
         UpdateRunningState();
     }
 
@@ -263,7 +264,7 @@ public sealed class MainForm : Form
     {
         _ = sender;
         _ = e;
-        _timer.Stop();
+        _controller.Stop();
         UpdateRunningState();
     }
 
@@ -271,20 +272,16 @@ public sealed class MainForm : Form
     {
         _ = sender;
         _ = e;
-        Step();
+        _controller.Step();
     }
 
     private void OnNew(object? sender, EventArgs e)
     {
         _ = sender;
         _ = e;
-        _timer.Stop();
-        _universe.Clear();
-        _currentFile = null;
+        _controller.Clear();
         UpdateTitle();
-        UpdateStatus();
         UpdateRunningState();
-        _lifePanel.Invalidate();
     }
 
     private void OnExit(object? sender, EventArgs e)
@@ -300,7 +297,7 @@ public sealed class MainForm : Form
         _ = e;
         using var dialog = new OpenFileDialog
         {
-            Filter = "Cells files (*.cells)|*.cells|All files (*.*)|*.*",
+            Filter = CellsFilter,
             FilterIndex = 1,
             DefaultExt = "cells",
         };
@@ -311,19 +308,12 @@ public sealed class MainForm : Form
 
         try
         {
-            using var reader = new StreamReader(dialog.FileName);
-            Universe loaded = CellsFormat.Load(reader, _universe.Boundary);
-            _timer.Stop();
-            _universe = loaded;
-            _currentFile = dialog.FileName;
-            _widthUpDown.Value = _universe.Width;
-            _heightUpDown.Value = _universe.Height;
+            _controller.Load(dialog.FileName);
+            SyncSizeControls();
             UpdateTitle();
-            UpdateStatus();
             UpdateRunningState();
-            _lifePanel.Invalidate();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentOutOfRangeException)
         {
             MessageBox.Show(this, $"Could not open that file:\n{ex.Message}", "Open failed",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -334,13 +324,13 @@ public sealed class MainForm : Form
     {
         _ = sender;
         _ = e;
-        if (_currentFile is null)
+        if (_controller.CurrentFile is null)
         {
             OnSaveAs(sender, e);
             return;
         }
 
-        SaveToFile(_currentFile);
+        SaveToFile(_controller.CurrentFile);
     }
 
     private void OnSaveAs(object? sender, EventArgs e)
@@ -349,7 +339,7 @@ public sealed class MainForm : Form
         _ = e;
         using var dialog = new SaveFileDialog
         {
-            Filter = "Cells files (*.cells)|*.cells|All files (*.*)|*.*",
+            Filter = CellsFilter,
             FilterIndex = 1,
             DefaultExt = "cells",
         };
@@ -365,9 +355,7 @@ public sealed class MainForm : Form
     {
         try
         {
-            using var writer = new StreamWriter(path);
-            CellsFormat.Save(_universe, writer);
-            _currentFile = path;
+            _controller.Save(path);
             UpdateTitle();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -381,16 +369,14 @@ public sealed class MainForm : Form
     {
         _ = sender;
         _ = e;
-        _universe.Resize((int)_widthUpDown.Value, (int)_heightUpDown.Value);
-        UpdateStatus();
-        _lifePanel.Invalidate();
+        _controller.Resize((int)_widthUpDown.Value, (int)_heightUpDown.Value);
     }
 
     private void OnIntervalChanged(object? sender, EventArgs e)
     {
         _ = sender;
         _ = e;
-        _timer.Interval = (int)_intervalUpDown.Value;
+        _controller.Interval = (int)_intervalUpDown.Value;
     }
 
     private void OnFiniteEdges(object? sender, EventArgs e)
@@ -411,32 +397,38 @@ public sealed class MainForm : Form
     {
         _ = sender;
         _ = e;
-        var selected = (BoundaryMode)_edgesComboBox.SelectedIndex;
-        if (selected != _universe.Boundary)
-        {
-            ApplyBoundary(selected);
-        }
+        // Setting the combo inside SyncBoundaryControls fires this
+        // handler. The controller ignores a request that changes nothing,
+        // and Sync is idempotent, so the round trip terminates instead
+        // of looping.
+        ApplyBoundary((BoundaryMode)_edgesComboBox.SelectedIndex);
     }
 
     private void ApplyBoundary(BoundaryMode boundary)
     {
-        if (_universe.Boundary == boundary)
-        {
-            SyncBoundaryControls();
-            return;
-        }
-
-        _universe = _universe.WithBoundary(boundary);
+        _controller.ApplyBoundary(boundary);
         SyncBoundaryControls();
-        UpdateStatus();
-        _lifePanel.Invalidate();
     }
 
     private void SyncBoundaryControls()
     {
-        _finiteMenuItem.Checked = _universe.Boundary == BoundaryMode.Finite;
-        _toroidalMenuItem.Checked = _universe.Boundary == BoundaryMode.Toroidal;
-        _edgesComboBox.SelectedIndex = (int)_universe.Boundary;
+        _finiteMenuItem.Checked = _controller.Universe.Boundary == BoundaryMode.Finite;
+        _toroidalMenuItem.Checked = _controller.Universe.Boundary == BoundaryMode.Toroidal;
+        _edgesComboBox.SelectedIndex = (int)_controller.Universe.Boundary;
+    }
+
+    // The size controls are input, not display: they are synced only
+    // after Open (and at startup), never on every controller change, or
+    // typing a new size while the simulation runs would be overwritten
+    // by the next generation. The range is widened before the value is
+    // assigned, because assigning a NumericUpDown value outside its
+    // range throws.
+    private void SyncSizeControls()
+    {
+        _widthUpDown.Maximum = Math.Max(_widthUpDown.Maximum, _controller.Universe.Width);
+        _heightUpDown.Maximum = Math.Max(_heightUpDown.Maximum, _controller.Universe.Height);
+        _widthUpDown.Value = _controller.Universe.Width;
+        _heightUpDown.Value = _controller.Universe.Height;
     }
 
     private void OnRandomize(object? sender, EventArgs e)
@@ -457,19 +449,17 @@ public sealed class MainForm : Form
             seed = parsedSeed;
         }
 
-        _universe.Randomize(seed);
-        UpdateStatus();
-        _lifePanel.Invalidate();
+        _controller.Randomize(seed);
     }
 
     private void OnPickColor(object? sender, EventArgs e)
     {
         _ = sender;
         _ = e;
-        using var dialog = new ColorDialog { Color = _cellColor };
+        using var dialog = new ColorDialog { Color = _lifePanel.CellColor };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            _cellColor = dialog.Color;
+            _lifePanel.CellColor = dialog.Color;
             _lifePanel.Invalidate();
         }
     }
@@ -486,119 +476,37 @@ public sealed class MainForm : Form
             "About Game of Life", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
-    private void OnLifePanelPaint(object? sender, PaintEventArgs e)
-    {
-        _ = sender;
-        float cellWidth = (float)_lifePanel.ClientSize.Width / _universe.Width;
-        float cellHeight = (float)_lifePanel.ClientSize.Height / _universe.Height;
-
-        using Pen gridPen = new(_gridColor, 1);
-        using Brush cellBrush = new SolidBrush(_cellColor);
-
-        for (int y = 0; y < _universe.Height; y++)
-        {
-            for (int x = 0; x < _universe.Width; x++)
-            {
-                float left = x * cellWidth;
-                float top = y * cellHeight;
-                if (_universe[x, y])
-                {
-                    e.Graphics.FillRectangle(cellBrush, left, top, cellWidth, cellHeight);
-                }
-
-                e.Graphics.DrawRectangle(gridPen, left, top, cellWidth, cellHeight);
-            }
-        }
-    }
-
-    private (int X, int Y)? CellAt(Point location)
-    {
-        float cellWidth = (float)_lifePanel.ClientSize.Width / _universe.Width;
-        float cellHeight = (float)_lifePanel.ClientSize.Height / _universe.Height;
-        if (cellWidth <= 0 || cellHeight <= 0)
-        {
-            return null;
-        }
-
-        int x = (int)(location.X / cellWidth);
-        int y = (int)(location.Y / cellHeight);
-        if (x < 0 || x >= _universe.Width || y < 0 || y >= _universe.Height)
-        {
-            return null;
-        }
-
-        return (x, y);
-    }
-
-    private void OnLifePanelMouseDown(object? sender, MouseEventArgs e)
-    {
-        _ = sender;
-        if (e.Button != MouseButtons.Left)
-        {
-            return;
-        }
-
-        (int X, int Y)? cell = CellAt(e.Location);
-        if (cell is null)
-        {
-            return;
-        }
-
-        _paintValue = _universe.Toggle(cell.Value.X, cell.Value.Y);
-        _isPainting = true;
-        _lifePanel.Capture = true;
-        _lifePanel.Invalidate();
-    }
-
-    private void OnLifePanelMouseMove(object? sender, MouseEventArgs e)
-    {
-        _ = sender;
-        if (!_isPainting || e.Button != MouseButtons.Left)
-        {
-            return;
-        }
-
-        (int X, int Y)? cell = CellAt(e.Location);
-        if (cell is null)
-        {
-            return;
-        }
-
-        if (_universe[cell.Value.X, cell.Value.Y] != _paintValue)
-        {
-            _universe[cell.Value.X, cell.Value.Y] = _paintValue;
-            _lifePanel.Invalidate();
-        }
-    }
-
-    private void OnLifePanelMouseUp(object? sender, MouseEventArgs e)
-    {
-        _ = sender;
-        _ = e;
-        _isPainting = false;
-        _lifePanel.Capture = false;
-    }
-
     private void UpdateRunningState()
     {
-        _startMenuItem.Enabled = !_timer.Enabled;
-        _startButton.Enabled = !_timer.Enabled;
-        _stopMenuItem.Enabled = _timer.Enabled;
-        _stopButton.Enabled = _timer.Enabled;
+        _startMenuItem.Enabled = !_controller.IsRunning;
+        _startButton.Enabled = !_controller.IsRunning;
+        _stopMenuItem.Enabled = _controller.IsRunning;
+        _stopButton.Enabled = _controller.IsRunning;
     }
 
     private void UpdateStatus()
     {
-        _statusGenerations.Text = $"Generations = {_universe.Generation}";
-        _statusAlive.Text = $"Alive = {_universe.AliveCount}";
-        _statusSize.Text = $"Size = {_universe.Width} x {_universe.Height}";
-        _statusEdges.Text = _universe.Boundary == BoundaryMode.Finite ? "Edges = Finite" : "Edges = Toroidal";
+        _statusGenerations.Text = $"Generations = {_controller.Universe.Generation}";
+        _statusAlive.Text = $"Alive = {_controller.Universe.AliveCount}";
+        _statusSize.Text = $"Size = {_controller.Universe.Width} x {_controller.Universe.Height}";
+        _statusEdges.Text = _controller.Universe.Boundary == BoundaryMode.Finite ? "Edges = Finite" : "Edges = Toroidal";
     }
 
     private void UpdateTitle()
     {
-        Text = _currentFile is null
+        Text = _controller.CurrentFile is null
             ? "Game of Life"
-            : $"Game of Life - {Path.GetFileName(_currentFile)}";
+            : $"Game of Life - {Path.GetFileName(_controller.CurrentFile)}";
+    }
+
+    private void SaveSettingsOnClosing(object? sender, FormClosingEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        GameSettings.Save(new GameSettings(
+            _controller.Universe.Width,
+            _controller.Universe.Height,
+            _controller.Interval,
+            _controller.Universe.Boundary));
     }
 }

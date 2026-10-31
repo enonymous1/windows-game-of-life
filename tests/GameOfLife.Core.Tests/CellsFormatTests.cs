@@ -70,6 +70,30 @@ public class CellsFormatTests
     }
 
     [Fact]
+    public void Parse_OversizedDocument_Throws()
+    {
+        // 1,001 rows of 1,000 cells: 1,001,000 cells, over the cap.
+        string row = new string('.', 1000);
+        string text = string.Join("\n", Enumerable.Repeat(row, 1001));
+
+        Assert.Throws<InvalidDataException>(() => CellsFormat.Parse(text));
+    }
+
+    [Fact]
+    public void Parse_AtCellLimit_Loads()
+    {
+        // Exactly 1,000,000 cells: at the cap, so it loads.
+        string row = new string('.', 1000);
+        string text = string.Join("\n", Enumerable.Repeat(row, 1000));
+
+        Universe universe = CellsFormat.Parse(text);
+
+        Assert.Equal(1000, universe.Width);
+        Assert.Equal(1000, universe.Height);
+        Assert.Equal(0, universe.AliveCount);
+    }
+
+    [Fact]
     public void Parse_NullText_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => CellsFormat.Parse(null!));
