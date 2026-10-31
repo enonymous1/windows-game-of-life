@@ -73,3 +73,9 @@ themselves are unchanged; everything around them was rebuilt.
   tests, publishes a framework-dependent win-x64 build, and attaches
   `game-of-life-win-x64.zip` plus a SHA-256 checksum to the GitHub
   release.
+- **CI line-ending fix (2026-10-31, pre-release):** `.gitattributes`
+  now pins `eol=lf` on checkout. Without it, a Windows checkout
+  converted text files to CRLF, and since `.editorconfig` demands
+  LF, the CI format check failed on windows-latest (ENDOFLINE)
+  while ubuntu-latest stayed green. Build and tests passed on both
+  throughout; only the format step was affected.

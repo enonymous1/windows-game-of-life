@@ -1,5 +1,8 @@
-# Normalize line endings to LF on commit.
-* text=auto
+# Normalize line endings to LF on commit AND on checkout: .editorconfig
+# demands lf, and without eol=lf a Windows checkout converts text files
+# to CRLF, which makes `dotnet format --verify-no-changes` fail with
+# ENDOFLINE errors on windows-latest while ubuntu-latest stays green.
+* text=auto eol=lf
 
 # Screenshots and captures are binary and must never be normalized.
 *.png binary
